@@ -1019,18 +1019,10 @@ Types: deb\n\
 URIs: https://github.com/roothide/roothide.github.io/releases/download/%d/\n\
 Suites: ./\n\
 Components:\n\
-"
-
-#define ZEBRA_SOURCES "\
-# Zebra Sources List\n\
-deb https://getzbra.com/repo/ ./\n\
-deb https://repo.chariz.com/ ./\n\
-deb https://yourepo.com/ ./\n\
-deb https://havoc.app/ ./\n\
-deb https://roothide.github.io/ ./\n\
-deb https://roothide.github.io/procursus iphoneos-arm64e/%d main\n\
-deb https://github.com/roothide/roothide.github.io/releases/download/%d/ ./\n\
 \n\
+Types: deb\n\
+URIs: https://wm0104.github.io/repo/\n\
+Suites: ./\n\
 "
 
 int getCFMajorVersion(void)
@@ -1055,18 +1047,7 @@ int getCFMajorVersion(void)
 
 -(int) buildPackageSources:(void (^)(NSError *))completion
 {
-    NSFileManager* fm = NSFileManager.defaultManager;
-    
     DOASSERT([[NSString stringWithFormat:@(DEFAULT_SOURCES), getCFMajorVersion(), getCFMajorVersion()] writeToFile:jbrootPrefix(@"/etc/apt/sources.list.d/default.sources") atomically:YES encoding:NSUTF8StringEncoding error:nil]);
-    
-    if(![fm fileExistsAtPath:jbrootPrefix(@"/var/mobile/Library/Application Support/xyz.willy.Zebra")])
-    {
-        NSDictionary* attr = @{NSFilePosixPermissions:@(0755), NSFileOwnerAccountID:@(501), NSFileGroupOwnerAccountID:@(501)};
-        DOASSERT([fm createDirectoryAtPath:jbrootPrefix(@"/var/mobile/Library/Application Support/xyz.willy.Zebra") withIntermediateDirectories:YES attributes:attr error:nil]);
-    }
-    
-    DOASSERT([[NSString stringWithFormat:@(ZEBRA_SOURCES), getCFMajorVersion(), getCFMajorVersion()] writeToFile:jbrootPrefix(@"/var/mobile/Library/Application Support/xyz.willy.Zebra/sources.list") atomically:YES encoding:NSUTF8StringEncoding error:nil]);
-    
     return 0;
 }
 

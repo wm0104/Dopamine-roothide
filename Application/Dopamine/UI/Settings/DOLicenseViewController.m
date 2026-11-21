@@ -137,8 +137,8 @@
             @"file": @"LICENSE_Sileo"
         },
         @{
-            @"name": @"Zebra",
-            @"file": @"LICENSE_Zebra"
+            @"name": @"Irisin",
+            @"file": @"LICENSE_Irisin"
         },
     ];
 }
