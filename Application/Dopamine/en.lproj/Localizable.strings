@@ -157,3 +157,10 @@
 "Backup_Error_Invalid" = "This file is not a Dopamine backup.";
 "Backup_Error_Corrupted" = "The backup file is corrupted.";
 "Backup_Error_Empty" = "The backup contains no restorable configuration.";
+// Configuration Backup folder
+"Button_Backup_Location" = "Backup Folder";
+"Button_Backup_Location_Reset" = "Use Default Folder";
+"Alert_Backup_Location_Current" = "Backup folder: %@";
+"Alert_Backup_Location_Changed_Title" = "Backup Folder Updated";
+"Alert_Backup_Location_Changed_Body" = "New backups will be saved to:\n%@";
+"Backup_Location_Default" = "App Documents";

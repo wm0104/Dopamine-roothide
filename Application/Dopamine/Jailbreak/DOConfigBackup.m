@@ -13,6 +13,8 @@
 
 NSString *const DOConfigBackupErrorDomain = @"DOConfigBackupErrorDomain";
 
+static NSString *const DOConfigBackupDirectoryPathKey = @"DOConfigBackupDirectoryPath";
+
 #define DO_CONFIG_BACKUP_MAX_COUNT 2
 
 #pragma mark - Little endian helpers
@@ -146,17 +148,50 @@ static void DOFixRestoredFileOwnership(NSString *destination)
 
 + (NSString *)backupDirectory
 {
+    return [self backupDirectoryURL].path;
+}
+
++ (NSURL *)defaultBackupDirectoryURL
+{
     NSString *documents = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
     if (!documents) {
         documents = NSTemporaryDirectory();
     }
-    return [documents stringByAppendingPathComponent:@"ConfigurationBackups"];
+    return [NSURL fileURLWithPath:[documents stringByAppendingPathComponent:@"ConfigurationBackups"] isDirectory:YES];
+}
+
++ (NSURL *)configuredBackupDirectoryURL
+{
+    NSString *path = [[NSUserDefaults standardUserDefaults] stringForKey:DOConfigBackupDirectoryPathKey];
+    if (!path.length) {
+        return nil;
+    }
+    return [NSURL fileURLWithPath:path isDirectory:YES];
+}
+
++ (void)setConfiguredBackupDirectoryURL:(NSURL *)url
+{
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    if (!url) {
+        [defaults removeObjectForKey:DOConfigBackupDirectoryPathKey];
+    }
+    else {
+        [defaults setObject:url.path forKey:DOConfigBackupDirectoryPathKey];
+    }
+    [defaults synchronize];
+}
+
++ (NSURL *)backupDirectoryURL
+{
+    NSURL *directoryURL = [self configuredBackupDirectoryURL] ?: [self defaultBackupDirectoryURL];
+    [[NSFileManager defaultManager] createDirectoryAtURL:directoryURL withIntermediateDirectories:YES attributes:nil error:nil];
+    return directoryURL;
 }
 
 + (NSArray<NSDictionary *> *)availableBackups
 {
     NSFileManager *fileManager = [NSFileManager defaultManager];
-    NSString *directory = [self backupDirectory];
+    NSString *directory = ([self configuredBackupDirectoryURL] ?: [self defaultBackupDirectoryURL]).path;
     NSArray<NSString *> *items = [fileManager contentsOfDirectoryAtPath:directory error:nil];
     NSMutableArray<NSDictionary *> *backups = [NSMutableArray array];
 
@@ -302,7 +337,7 @@ static void DOFixRestoredFileOwnership(NSString *destination)
     DOAppendLE32(archive, centralDirectoryOffset);
     DOAppendLE16(archive, 0);
 
-    NSString *directory = [self backupDirectory];
+    NSString *directory = [self backupDirectoryURL].path;
     [fileManager createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:nil];
 
     NSDateFormatter *formatter = [[NSDateFormatter alloc] init];

@@ -21,8 +21,12 @@
 #import "DOPSJetsamListItemsController.h"
 #import "DOButtonCell.h"
 #import "DOConfigBackup.h"
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
-@interface DOSettingsController ()
+@interface DOSettingsController () <UIDocumentPickerDelegate>
+{
+    NSURL *_scopedBackupDirectoryURL;
+}
 
 @end
 
@@ -707,7 +711,9 @@
 - (void)backupRestorePressed
 {
     NSArray<NSDictionary *> *backups = [DOConfigBackup availableBackups];
-    NSString *message = backups.count ? DOLocalizedString(@"Alert_Backup_Message_Existing") : DOLocalizedString(@"Alert_Backup_Message_None");
+    NSString *summary = backups.count ? DOLocalizedString(@"Alert_Backup_Message_Existing") : DOLocalizedString(@"Alert_Backup_Message_None");
+    NSString *location = [NSString stringWithFormat:DOLocalizedString(@"Alert_Backup_Location_Current"), [self backupDirectoryDisplayName]];
+    NSString *message = [NSString stringWithFormat:@"%@\n\n%@", summary, location];
     UIAlertController *alertController = [UIAlertController alertControllerWithTitle:DOLocalizedString(@"Alert_Backup_Title") message:message preferredStyle:UIAlertControllerStyleActionSheet];
 
     [alertController addAction:[UIAlertAction actionWithTitle:DOLocalizedString(@"Button_Backup_Create") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
@@ -720,10 +726,68 @@
         }]];
     }
 
+    [alertController addAction:[UIAlertAction actionWithTitle:DOLocalizedString(@"Button_Backup_Location") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        [self presentBackupLocationPicker];
+    }]];
+
+    if ([DOConfigBackup configuredBackupDirectoryURL]) {
+        [alertController addAction:[UIAlertAction actionWithTitle:DOLocalizedString(@"Button_Backup_Location_Reset") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            [self resetBackupLocation];
+        }]];
+    }
+
     [alertController addAction:[UIAlertAction actionWithTitle:DOLocalizedString(@"Button_Cancel") style:UIAlertActionStyleCancel handler:nil]];
     alertController.popoverPresentationController.sourceView = self.view;
     alertController.popoverPresentationController.sourceRect = self.view.bounds;
     [self presentViewController:alertController animated:YES completion:nil];
+}
+
+- (NSString *)backupDirectoryDisplayName
+{
+    NSURL *configuredDirectoryURL = [DOConfigBackup configuredBackupDirectoryURL];
+    if (!configuredDirectoryURL) {
+        return DOLocalizedString(@"Backup_Location_Default");
+    }
+    return configuredDirectoryURL.lastPathComponent ?: configuredDirectoryURL.path;
+}
+
+- (void)presentBackupLocationPicker
+{
+    UIDocumentPickerViewController *pickerViewController = [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeFolder] asCopy:NO];
+    pickerViewController.delegate = self;
+    pickerViewController.allowsMultipleSelection = NO;
+    [self presentViewController:pickerViewController animated:YES completion:nil];
+}
+
+- (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls
+{
+    NSURL *url = urls.firstObject;
+    if (!url) {
+        return;
+    }
+
+    if (_scopedBackupDirectoryURL) {
+        [_scopedBackupDirectoryURL stopAccessingSecurityScopedResource];
+    }
+    _scopedBackupDirectoryURL = [url startAccessingSecurityScopedResource] ? url : nil;
+
+    [DOConfigBackup setConfiguredBackupDirectoryURL:url];
+
+    NSString *message = [NSString stringWithFormat:DOLocalizedString(@"Alert_Backup_Location_Changed_Body"), url.path];
+    [self presentSimpleAlertWithTitle:DOLocalizedString(@"Alert_Backup_Location_Changed_Title") message:message];
+}
+
+- (void)resetBackupLocation
+{
+    if (_scopedBackupDirectoryURL) {
+        [_scopedBackupDirectoryURL stopAccessingSecurityScopedResource];
+        _scopedBackupDirectoryURL = nil;
+    }
+
+    [DOConfigBackup setConfiguredBackupDirectoryURL:nil];
+
+    NSString *message = [NSString stringWithFormat:DOLocalizedString(@"Alert_Backup_Location_Changed_Body"), [DOConfigBackup backupDirectoryURL].path];
+    [self presentSimpleAlertWithTitle:DOLocalizedString(@"Alert_Backup_Location_Changed_Title") message:message];
 }
 
 - (UIAlertController *)presentProgressAlertWithTitle:(NSString *)title

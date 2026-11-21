@@ -16,6 +16,14 @@ extern NSString *const DOConfigBackupErrorDomain;
 // Directory that holds the backup archives (inside the app container).
 + (NSString *)backupDirectory;
 
+// Folder that the user picked through the document picker, nil when the default folder is used.
++ (NSURL *_Nullable)configuredBackupDirectoryURL;
++ (void)setConfiguredBackupDirectoryURL:(NSURL *_Nullable)url;
+
+// Folder that backups are actually written to, created on demand.
++ (NSURL *)backupDirectoryURL;
++ (NSURL *)defaultBackupDirectoryURL;
+
 // Newest first. Every entry contains path, name, date and size keys.
 + (NSArray<NSDictionary *> *)availableBackups;
 

@@ -152,3 +152,10 @@
 "Backup_Error_Invalid" = "这不是 Dopamine 的备份文件。";
 "Backup_Error_Corrupted" = "备份文件已损坏。";
 "Backup_Error_Empty" = "该备份中没有可恢复的配置。";
+// 备份位置
+"Button_Backup_Location" = "备份位置";
+"Button_Backup_Location_Reset" = "使用默认位置";
+"Alert_Backup_Location_Current" = "备份位置：%@";
+"Alert_Backup_Location_Changed_Title" = "备份位置已更改";
+"Alert_Backup_Location_Changed_Body" = "新的备份将保存到：\n%@";
+"Backup_Location_Default" = "App 文档目录";
