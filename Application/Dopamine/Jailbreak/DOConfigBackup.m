@@ -6,7 +6,11 @@
 #import "DOConfigBackup.h"
 #import "DOUIManager.h"
 
+#import <dirent.h>
 #import <dispatch/dispatch.h>
+#import <fcntl.h>
+#import <limits.h>
+#import <string.h>
 #import <sys/stat.h>
 #import <unistd.h>
 
@@ -60,16 +64,25 @@ static NSString *DOJailbreakRootPath(void)
     return cachedRoot;
 }
 
+// The bootstrap keeps its own var as a platform link, so the real path is only reachable
+// through that link. Same anchor rule the Irisin backup engine uses.
+static NSString *DOPlatformDirectory(NSString *path)
+{
+    char resolved[PATH_MAX];
+    if (realpath(path.fileSystemRepresentation, resolved)) {
+        return [NSString stringWithUTF8String:resolved];
+    }
+    return path;
+}
+
 #pragma mark - Backup roots
 
-// The same seven groups Irisin backs up: tweak and system configuration under the real
-// /var/mobile/Library (the bootstrap links its own var to it) plus the APT source lists
-// that live inside the jailbreak root.
-static NSArray<NSDictionary<NSString *, NSString *> *> *DOBackupRoots(void)
+static NSArray<NSDictionary<NSString *, id> *> *DOBackupRoots(void)
 {
-    NSMutableArray<NSDictionary<NSString *, NSString *> *> *roots = [NSMutableArray array];
-    NSString *libraryPath = @"/var/mobile/Library";
+    NSMutableArray<NSDictionary<NSString *, id> *> *roots = [NSMutableArray array];
+    NSString *libraryPath = [DOPlatformDirectory(@"/var") stringByAppendingPathComponent:@"mobile/Library"];
     NSArray<NSString *> *configNames = @[ @"Preferences", @"ControlCenter", @"CallAssist", @"RootHide", @"CallAssistActivation", @"Snapper3" ];
+
     for (NSString *name in configNames) {
         [roots addObject:@{
             @"relative": [@"config" stringByAppendingPathComponent:name],
@@ -78,122 +91,202 @@ static NSArray<NSDictionary<NSString *, NSString *> *> *DOBackupRoots(void)
     }
 
     NSString *jailbreakRoot = DOJailbreakRootPath();
-    if (jailbreakRoot.length > 0) {
-        [roots addObject:@{
-            @"relative": @"sources/sources.list.d",
-            @"source": [jailbreakRoot stringByAppendingPathComponent:@"etc/apt/sources.list.d"],
-        }];
-    }
+    NSString *sourcesPath = jailbreakRoot.length > 0 ? [jailbreakRoot stringByAppendingPathComponent:@"etc/apt/sources.list.d"] : [DOPlatformDirectory(@"/etc") stringByAppendingPathComponent:@"apt/sources.list.d"];
+    [roots addObject:@{
+        @"relative": @"sources/sources.list.d",
+        @"source": sourcesPath,
+    }];
 
     return roots;
 }
 
-#pragma mark - Filesystem helpers
+#pragma mark - POSIX helpers
 
-static NSArray<NSString *> *DOEnumerateRelativePaths(NSString *rootPath)
+static BOOL DOPathIsDirectory(NSString *path)
 {
-    NSMutableArray<NSString *> *relativePaths = [NSMutableArray array];
-    NSFileManager *fileManager = [NSFileManager defaultManager];
-    NSString *rootPrefix = [rootPath stringByAppendingString:@"/"];
-    NSURL *rootURL = [NSURL fileURLWithPath:rootPath isDirectory:YES];
-    NSDirectoryEnumerator<NSURL *> *enumerator = [fileManager enumeratorAtURL:rootURL includingPropertiesForKeys:@[NSURLIsSymbolicLinkKey] options:0 errorHandler:nil];
-    for (NSURL *url in enumerator) {
-        id isSymbolicLink = nil;
-        [url getResourceValue:&isSymbolicLink forKey:NSURLIsSymbolicLinkKey error:nil];
-        if ([isSymbolicLink boolValue]) {
-            [enumerator skipDescendants];
-            continue;
-        }
-
-        NSString *path = url.path;
-        if (![path hasPrefix:rootPrefix]) {
-            continue;
-        }
-        [relativePaths addObject:[path substringFromIndex:rootPrefix.length]];
+    struct stat info;
+    if (lstat(path.fileSystemRepresentation, &info) != 0) {
+        return NO;
     }
-    return relativePaths;
+    return S_ISDIR(info.st_mode);
 }
 
-static void DOFixItemOwnership(NSString *path, BOOL isDirectory)
+static void DOApplyOwnership(NSString *path, BOOL isDirectory)
 {
     const char *filePath = path.fileSystemRepresentation;
     if (!filePath) {
         return;
     }
-    if ([path hasPrefix:@"/var/mobile/"]) {
+    if ([path hasPrefix:@"/var/mobile/"] || [path hasPrefix:@"/private/var/mobile/"]) {
         chown(filePath, 501, 501);
     }
     chmod(filePath, isDirectory ? 0755 : 0644);
 }
 
-static void DOFixTreeOwnership(NSString *rootPath)
+// Mirrors the Irisin tree walk: entries are read with lstat, links and special files are
+// never followed, regular files are copied as-is.
+static BOOL DOCopyDirectoryContents(NSString *sourceDirectory, NSString *destinationDirectory, NSUInteger *fileCount, unsigned long long *totalBytes, NSError *_Nullable *_Nullable error)
 {
-    NSFileManager *fileManager = [NSFileManager defaultManager];
-    BOOL isDirectory = NO;
-    if (![fileManager fileExistsAtPath:rootPath isDirectory:&isDirectory]) {
-        return;
-    }
-    DOFixItemOwnership(rootPath, isDirectory);
-
-    for (NSString *relativePath in DOEnumerateRelativePaths(rootPath)) {
-        NSString *path = [rootPath stringByAppendingPathComponent:relativePath];
-        BOOL itemIsDirectory = NO;
-        if (![fileManager fileExistsAtPath:path isDirectory:&itemIsDirectory]) {
-            continue;
+    DIR *directory = opendir(sourceDirectory.fileSystemRepresentation);
+    if (!directory) {
+        if (error) {
+            *error = DOConfigBackupErrorForCode(3);
         }
-        DOFixItemOwnership(path, itemIsDirectory);
-    }
-}
-
-static BOOL DOCopyTree(NSString *sourcePath, NSString *destinationPath, NSUInteger *fileCount, unsigned long long *totalBytes, NSError *_Nullable *_Nullable error)
-{
-    NSFileManager *fileManager = [NSFileManager defaultManager];
-    if (![fileManager createDirectoryAtPath:destinationPath withIntermediateDirectories:YES attributes:nil error:error]) {
         return NO;
     }
 
-    for (NSString *relativePath in DOEnumerateRelativePaths(sourcePath)) {
-        NSString *fromPath = [sourcePath stringByAppendingPathComponent:relativePath];
-        NSString *toPath = [destinationPath stringByAppendingPathComponent:relativePath];
-
-        BOOL isDirectory = NO;
-        if (![fileManager fileExistsAtPath:fromPath isDirectory:&isDirectory]) {
+    BOOL succeeded = YES;
+    struct dirent *entry = NULL;
+    while ((entry = readdir(directory)) != NULL) {
+        if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) {
             continue;
         }
 
-        if (isDirectory) {
-            if (![fileManager createDirectoryAtPath:toPath withIntermediateDirectories:YES attributes:nil error:error]) {
-                return NO;
+        NSString *name = [NSString stringWithUTF8String:entry->d_name];
+        if (name.length == 0) {
+            continue;
+        }
+        NSString *sourcePath = [sourceDirectory stringByAppendingPathComponent:name];
+        NSString *destinationPath = [destinationDirectory stringByAppendingPathComponent:name];
+
+        struct stat info;
+        if (lstat(sourcePath.fileSystemRepresentation, &info) != 0) {
+            continue;
+        }
+        if (S_ISLNK(info.st_mode)) {
+            continue;
+        }
+
+        if (S_ISDIR(info.st_mode)) {
+            mkdir(destinationPath.fileSystemRepresentation, 0755);
+            if (!DOCopyDirectoryContents(sourcePath, destinationPath, fileCount, totalBytes, error)) {
+                succeeded = NO;
+                break;
             }
             continue;
         }
 
-        NSDictionary *attributes = [fileManager attributesOfItemAtPath:fromPath error:nil];
-        unsigned long long size = [attributes[NSFileSize] unsignedLongLongValue];
+        if (!S_ISREG(info.st_mode)) {
+            continue;
+        }
+
+        unsigned long long size = (unsigned long long)info.st_size;
         if (size > DOConfigBackupMaximumFileBytes || (totalBytes != NULL && *totalBytes + size > DOConfigBackupMaximumTotalBytes)) {
             if (error) {
                 *error = DOConfigBackupErrorForCode(2);
             }
-            return NO;
+            succeeded = NO;
+            break;
         }
 
-        if (![fileManager createDirectoryAtPath:[toPath stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:error]) {
-            return NO;
-        }
-        [fileManager removeItemAtPath:toPath error:nil];
-        if (![fileManager copyItemAtPath:fromPath toPath:toPath error:error]) {
-            return NO;
+        int sourceFD = open(sourcePath.fileSystemRepresentation, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+        if (sourceFD < 0) {
+            if (error) {
+                *error = DOConfigBackupErrorForCode(3);
+            }
+            succeeded = NO;
+            break;
         }
 
+        unlink(destinationPath.fileSystemRepresentation);
+        int destinationFD = open(destinationPath.fileSystemRepresentation, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, 0644);
+        if (destinationFD < 0) {
+            close(sourceFD);
+            if (error) {
+                *error = DOConfigBackupErrorForCode(2);
+            }
+            succeeded = NO;
+            break;
+        }
+
+        char buffer[64 * 1024];
+        BOOL copied = YES;
+        while (YES) {
+            ssize_t readBytes = read(sourceFD, buffer, sizeof(buffer));
+            if (readBytes < 0) {
+                copied = NO;
+                break;
+            }
+            if (readBytes == 0) {
+                break;
+            }
+
+            ssize_t writtenBytes = 0;
+            while (writtenBytes < readBytes) {
+                ssize_t result = write(destinationFD, buffer + writtenBytes, (size_t)(readBytes - writtenBytes));
+                if (result <= 0) {
+                    copied = NO;
+                    break;
+                }
+                writtenBytes += result;
+            }
+            if (!copied) {
+                break;
+            }
+        }
+
+        fsync(destinationFD);
+        close(destinationFD);
+        close(sourceFD);
+
+        if (!copied) {
+            if (error) {
+                *error = DOConfigBackupErrorForCode(2);
+            }
+            succeeded = NO;
+            break;
+        }
+
+        DOApplyOwnership(destinationPath, NO);
         if (fileCount) {
-            *fileCount += 1;
+            {
+                *fileCount += 1;
+            }
         }
         if (totalBytes) {
             *totalBytes += size;
         }
     }
 
-    return YES;
+    closedir(directory);
+    return succeeded;
+}
+
+static BOOL DORemoveTree(NSString *path)
+{
+    struct stat info;
+    if (lstat(path.fileSystemRepresentation, &info) != 0) {
+        return YES;
+    }
+    if (!S_ISDIR(info.st_mode)) {
+        return unlink(path.fileSystemRepresentation) == 0;
+    }
+
+    DIR *directory = opendir(path.fileSystemRepresentation);
+    if (!directory) {
+        return NO;
+    }
+
+    struct dirent *entry = NULL;
+    BOOL succeeded = YES;
+    while ((entry = readdir(directory)) != NULL) {
+        if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) {
+            continue;
+        }
+        NSString *name = [NSString stringWithUTF8String:entry->d_name];
+        if (!name.length) {
+            continue;
+        }
+        if (!DORemoveTree([path stringByAppendingPathComponent:name])) {
+            succeeded = NO;
+        }
+    }
+    closedir(directory);
+
+    if (rmdir(path.fileSystemRepresentation) != 0) {
+        succeeded = NO;
+    }
+    return succeeded;
 }
 
 #pragma mark - DOConfigBackup
@@ -258,8 +351,7 @@ static BOOL DOCopyTree(NSString *sourcePath, NSString *destinationPath, NSUInteg
         }
 
         NSString *path = [basePath stringByAppendingPathComponent:entry];
-        BOOL isDirectory = NO;
-        if (![fileManager fileExistsAtPath:path isDirectory:&isDirectory] || !isDirectory) {
+        if (!DOPathIsDirectory(path)) {
             continue;
         }
 
@@ -267,7 +359,7 @@ static BOOL DOCopyTree(NSString *sourcePath, NSString *destinationPath, NSUInteg
         if (!manifestData) {
             continue;
         }
-        NSDictionary *manifest = [NSJSONSerialization JSONObjectWithData:manifestData options:0 error:nil];
+        id manifest = [NSJSONSerialization JSONObjectWithData:manifestData options:0 error:nil];
 
         NSDictionary *attributes = [fileManager attributesOfItemAtPath:path error:nil];
         id totalBytes = [manifest isKindOfClass:[NSDictionary class]] ? manifest[@"totalBytes"] : nil;
@@ -293,9 +385,8 @@ static BOOL DOCopyTree(NSString *sourcePath, NSString *destinationPath, NSUInteg
         return;
     }
 
-    NSFileManager *fileManager = [NSFileManager defaultManager];
     for (NSUInteger index = maximumCount; index < backups.count; index++) {
-        [fileManager removeItemAtPath:backups[index][@"path"] error:nil];
+        DORemoveTree(backups[index][@"path"]);
     }
 }
 
@@ -317,46 +408,47 @@ static BOOL DOCopyTree(NSString *sourcePath, NSString *destinationPath, NSUInteg
 
     NSString *baseName = [DOConfigBackupNamePrefix stringByAppendingString:[dateFormatter stringFromDate:[NSDate date]]];
     NSString *folderPath = [basePath stringByAppendingPathComponent:baseName];
-    for (NSUInteger suffix = 2; [fileManager fileExistsAtPath:folderPath]; suffix++) {
+    for (NSUInteger suffix = 2; [[NSFileManager defaultManager] fileExistsAtPath:folderPath]; suffix++) {
         folderPath = [basePath stringByAppendingPathComponent:[baseName stringByAppendingFormat:@"-%lu", (unsigned long)suffix]];
     }
 
-    NSError *createError = nil;
-    if (![fileManager createDirectoryAtPath:folderPath withIntermediateDirectories:YES attributes:nil error:&createError]) {
-        if (error) {
-            *error = createError ?: DOConfigBackupErrorForCode(2);
-        }
-        return NO;
-    }
+    mkdir(folderPath.fileSystemRepresentation, 0755);
 
     NSUInteger fileCount = 0;
     unsigned long long totalBytes = 0;
     NSMutableArray<NSString *> *capturedRoots = [NSMutableArray array];
+    NSMutableArray<NSString *> *diagnostics = [NSMutableArray array];
 
     for (NSDictionary *root in DOBackupRoots()) {
         NSString *sourcePath = root[@"source"];
-        BOOL isDirectory = NO;
-        if (![fileManager fileExistsAtPath:sourcePath isDirectory:&isDirectory] || !isDirectory) {
+        NSString *relativePath = root[@"relative"];
+        if (!DOPathIsDirectory(sourcePath)) {
+            [diagnostics addObject:[NSString stringWithFormat:@"%@: missing", sourcePath]];
             continue;
         }
 
-        NSString *destinationPath = [folderPath stringByAppendingPathComponent:root[@"relative"]];
+        NSUInteger filesBefore = fileCount;
+        NSString *destinationPath = [folderPath stringByAppendingPathComponent:relativePath];
+        mkdir(destinationPath.fileSystemRepresentation, 0755);
+
         NSError *copyError = nil;
-        if (!DOCopyTree(sourcePath, destinationPath, &fileCount, &totalBytes, &copyError)) {
-            [fileManager removeItemAtPath:folderPath error:nil];
+        if (!DOCopyDirectoryContents(sourcePath, destinationPath, &fileCount, &totalBytes, &copyError)) {
+            DORemoveTree(folderPath);
             if (error) {
                 *error = copyError ?: DOConfigBackupErrorForCode(2);
             }
             return NO;
         }
 
-        [capturedRoots addObject:root[@"relative"]];
+        [diagnostics addObject:[NSString stringWithFormat:@"%@: %lu files", sourcePath, (unsigned long)(fileCount - filesBefore)]];
+        [capturedRoots addObject:relativePath];
     }
 
     if (fileCount == 0) {
-        [fileManager removeItemAtPath:folderPath error:nil];
+        DORemoveTree(folderPath);
         if (error) {
-            *error = DOConfigBackupErrorForCode(1);
+            NSString *detail = [diagnostics componentsJoinedByString:@"\n"];
+            *error = [NSError errorWithDomain:DOConfigBackupErrorDomain code:1 userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"%@\n%@", DOLocalizedString(@"Backup_Error_Nothing"), detail] }];
         }
         return NO;
     }
@@ -377,7 +469,7 @@ static BOOL DOCopyTree(NSString *sourcePath, NSString *destinationPath, NSUInteg
 
     NSData *manifestData = [NSJSONSerialization dataWithJSONObject:manifest options:NSJSONWritingPrettyPrinted error:nil];
     if (!manifestData || ![manifestData writeToFile:[folderPath stringByAppendingPathComponent:DOConfigBackupManifestName] atomically:YES]) {
-        [fileManager removeItemAtPath:folderPath error:nil];
+        DORemoveTree(folderPath);
         if (error) {
             *error = DOConfigBackupErrorForCode(2);
         }
@@ -390,15 +482,13 @@ static BOOL DOCopyTree(NSString *sourcePath, NSString *destinationPath, NSUInteg
 
 + (BOOL)restoreBackupAtPath:(NSString *)path error:(NSError **)error
 {
-    NSFileManager *fileManager = [NSFileManager defaultManager];
-    BOOL isDirectory = NO;
-    if (![fileManager fileExistsAtPath:path isDirectory:&isDirectory] || !isDirectory) {
+    if (!DOPathIsDirectory(path)) {
         if (error) {
             *error = DOConfigBackupErrorForCode(5);
         }
         return NO;
     }
-    if (![fileManager fileExistsAtPath:[path stringByAppendingPathComponent:DOConfigBackupManifestName]]) {
+    if (![[NSFileManager defaultManager] fileExistsAtPath:[path stringByAppendingPathComponent:DOConfigBackupManifestName]]) {
         if (error) {
             *error = DOConfigBackupErrorForCode(5);
         }
@@ -409,30 +499,27 @@ static BOOL DOCopyTree(NSString *sourcePath, NSString *destinationPath, NSUInteg
 
     for (NSDictionary *root in DOBackupRoots()) {
         NSString *sourcePath = [path stringByAppendingPathComponent:root[@"relative"]];
-        BOOL sourceIsDirectory = NO;
-        if (![fileManager fileExistsAtPath:sourcePath isDirectory:&sourceIsDirectory] || !sourceIsDirectory) {
+        if (!DOPathIsDirectory(sourcePath)) {
             continue;
         }
 
         NSString *destinationPath = root[@"source"];
-        BOOL destinationIsDirectory = NO;
-        if (![fileManager fileExistsAtPath:destinationPath isDirectory:&destinationIsDirectory]) {
-            if (![fileManager createDirectoryAtPath:destinationPath withIntermediateDirectories:YES attributes:nil error:error]) {
+        if (!DOPathIsDirectory(destinationPath)) {
+            mkdir(destinationPath.fileSystemRepresentation, 0755);
+            if (!DOPathIsDirectory(destinationPath)) {
+                if (error) {
+                    *error = DOConfigBackupErrorForCode(2);
+                }
                 return NO;
             }
-        } else if (!destinationIsDirectory) {
-            if (error) {
-                *error = DOConfigBackupErrorForCode(5);
-            }
-            return NO;
         }
 
         NSUInteger copiedCount = 0;
-        if (!DOCopyTree(sourcePath, destinationPath, &copiedCount, NULL, error)) {
+        if (!DOCopyDirectoryContents(sourcePath, destinationPath, &copiedCount, NULL, error)) {
             return NO;
         }
         restoredFileCount += copiedCount;
-        DOFixTreeOwnership(destinationPath);
+        DOApplyOwnership(destinationPath, YES);
     }
 
     if (restoredFileCount == 0) {
