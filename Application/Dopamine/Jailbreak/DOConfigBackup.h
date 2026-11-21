@@ -13,7 +13,7 @@ extern NSString *const DOConfigBackupErrorDomain;
 
 @interface DOConfigBackup : NSObject
 
-// Directory that holds the backup archives (inside the app container).
+// Directory that holds the backup folders (inside the app container by default).
 + (NSString *)backupDirectory;
 
 // Folder that the user picked through the document picker, nil when the default folder is used.
@@ -27,10 +27,10 @@ extern NSString *const DOConfigBackupErrorDomain;
 // Newest first. Every entry contains path, name, date and size keys.
 + (NSArray<NSDictionary *> *)availableBackups;
 
-// Archives the current configuration. Call this while running as root.
+// Copies the current configuration into a new dated folder. Call this while running as root.
 + (BOOL)createBackupWithError:(NSError *_Nullable *_Nullable)error;
 
-// Restores an archive created by createBackupWithError:. Call this while running as root.
+// Restores a folder created by createBackupWithError:. Call this while running as root.
 + (BOOL)restoreBackupAtPath:(NSString *)path error:(NSError *_Nullable *_Nullable)error;
 
 @end

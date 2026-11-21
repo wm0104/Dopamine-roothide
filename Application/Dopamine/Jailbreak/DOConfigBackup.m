@@ -4,7 +4,6 @@
 //
 
 #import "DOConfigBackup.h"
-#import "DOEnvironmentManager.h"
 #import "DOUIManager.h"
 
 #import <dispatch/dispatch.h>
@@ -14,62 +13,31 @@
 NSString *const DOConfigBackupErrorDomain = @"DOConfigBackupErrorDomain";
 
 static NSString *const DOConfigBackupDirectoryPathKey = @"DOConfigBackupDirectoryPath";
+static NSString *const DOConfigBackupNamePrefix = @"Configuration-";
+static NSString *const DOConfigBackupManifestName = @"manifest.json";
 
 #define DO_CONFIG_BACKUP_MAX_COUNT 2
 
-#pragma mark - Little endian helpers
+static const unsigned long long DOConfigBackupMaximumFileBytes = 32ULL * 1024ULL * 1024ULL;
+static const unsigned long long DOConfigBackupMaximumTotalBytes = 128ULL * 1024ULL * 1024ULL;
 
-static void DOAppendLE16(NSMutableData *data, uint16_t value)
+#pragma mark - Errors
+
+static NSError *DOConfigBackupErrorWithKey(NSInteger code, NSString *key)
 {
-    uint8_t bytes[2] = { (uint8_t)(value & 0xFF), (uint8_t)((value >> 8) & 0xFF) };
-    [data appendBytes:bytes length:sizeof(bytes)];
+    return [NSError errorWithDomain:DOConfigBackupErrorDomain code:code userInfo:@{ NSLocalizedDescriptionKey: DOLocalizedString(key) }];
 }
 
-static void DOAppendLE32(NSMutableData *data, uint32_t value)
+static NSError *DOConfigBackupErrorForCode(NSInteger code)
 {
-    uint8_t bytes[4] = { (uint8_t)(value & 0xFF), (uint8_t)((value >> 8) & 0xFF), (uint8_t)((value >> 16) & 0xFF), (uint8_t)((value >> 24) & 0xFF) };
-    [data appendBytes:bytes length:sizeof(bytes)];
-}
-
-static uint16_t DOReadLE16(const uint8_t *bytes)
-{
-    return (uint16_t)((uint16_t)bytes[0] | ((uint16_t)bytes[1] << 8));
-}
-
-static uint32_t DOReadLE32(const uint8_t *bytes)
-{
-    return (uint32_t)((uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) | ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24));
-}
-
-static uint32_t DOCRC32(const uint8_t *bytes, size_t length)
-{
-    static uint32_t table[256];
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        for (uint32_t i = 0; i < 256; i++) {
-            uint32_t value = i;
-            for (int bit = 0; bit < 8; bit++) {
-                value = (value & 1) ? (0xEDB88320U ^ (value >> 1)) : (value >> 1);
-            }
-            table[i] = value;
-        }
-    });
-
-    uint32_t crc = 0xFFFFFFFFU;
-    for (size_t i = 0; i < length; i++) {
-        crc = table[(crc ^ bytes[i]) & 0xFF] ^ (crc >> 8);
+    switch (code) {
+        case 1: return DOConfigBackupErrorWithKey(code, @"Backup_Error_Nothing");
+        case 2: return DOConfigBackupErrorWithKey(code, @"Backup_Error_Write");
+        case 3: return DOConfigBackupErrorWithKey(code, @"Backup_Error_Read");
+        case 5: return DOConfigBackupErrorWithKey(code, @"Backup_Error_Invalid");
+        case 7: return DOConfigBackupErrorWithKey(code, @"Backup_Error_Empty");
+        default: return DOConfigBackupErrorWithKey(code, @"Backup_Error_Corrupted");
     }
-    return crc ^ 0xFFFFFFFFU;
-}
-
-static void DODosDateTime(NSDate *date, uint16_t *outTime, uint16_t *outDate)
-{
-    NSCalendar *calendar = [[NSCalendar alloc] initWithCalendarIdentifier:NSCalendarIdentifierGregorian];
-    calendar.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:0];
-    NSDateComponents *components = [calendar components:(NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay | NSCalendarUnitHour | NSCalendarUnitMinute | NSCalendarUnitSecond) fromDate:date];
-    NSInteger year = components.year < 1980 ? 1980 : components.year;
-    *outDate = (uint16_t)(((year - 1980) << 9) | (components.month << 5) | components.day);
-    *outTime = (uint16_t)((components.hour << 11) | (components.minute << 5) | (components.second / 2));
 }
 
 #pragma mark - Jailbreak paths
@@ -92,78 +60,168 @@ static NSString *DOJailbreakRootPath(void)
     return cachedRoot;
 }
 
-static NSArray<NSDictionary *> *DOBackupSources(void)
+#pragma mark - Backup roots
+
+// The same seven groups Irisin backs up: tweak and system configuration under the real
+// /var/mobile/Library (the bootstrap links its own var to it) plus the APT source lists
+// that live inside the jailbreak root.
+static NSArray<NSDictionary<NSString *, NSString *> *> *DOBackupRoots(void)
 {
-    NSMutableArray<NSDictionary *> *sources = [NSMutableArray array];
-    [sources addObject:@{ @"path": @"/var/mobile/Library/Preferences", @"archive": @"rootfs/var/mobile/Library/Preferences", @"mode": @"plist" }];
+    NSMutableArray<NSDictionary<NSString *, NSString *> *> *roots = [NSMutableArray array];
+    NSString *libraryPath = @"/var/mobile/Library";
+    NSArray<NSString *> *configNames = @[ @"Preferences", @"ControlCenter", @"CallAssist", @"RootHide", @"CallAssistActivation", @"Snapper3" ];
+    for (NSString *name in configNames) {
+        [roots addObject:@{
+            @"relative": [@"config" stringByAppendingPathComponent:name],
+            @"source": [libraryPath stringByAppendingPathComponent:name],
+        }];
+    }
 
     NSString *jailbreakRoot = DOJailbreakRootPath();
-    if (jailbreakRoot) {
-        [sources addObject:@{ @"path": [jailbreakRoot stringByAppendingPathComponent:@"/var/mobile/Library/Preferences"], @"archive": @"jbroot/var/mobile/Library/Preferences", @"mode": @"plist" }];
-        [sources addObject:@{ @"path": [jailbreakRoot stringByAppendingPathComponent:@"/etc/apt/sources.list.d"], @"archive": @"jbroot/etc/apt/sources.list.d", @"mode": @"apt" }];
-        [sources addObject:@{ @"path": [jailbreakRoot stringByAppendingPathComponent:@"/etc/apt/preferences.d"], @"archive": @"jbroot/etc/apt/preferences.d", @"mode": @"apt" }];
+    if (jailbreakRoot.length > 0) {
+        [roots addObject:@{
+            @"relative": @"sources/sources.list.d",
+            @"source": [jailbreakRoot stringByAppendingPathComponent:@"etc/apt/sources.list.d"],
+        }];
     }
-    return sources;
+
+    return roots;
 }
 
-// Maps an entry name back to the absolute path it should be restored to.
-// Returns nil for entries that are not part of the backed up configuration.
-static NSString *DODestinationPathForEntryName(NSString *name)
+#pragma mark - Filesystem helpers
+
+static NSArray<NSString *> *DOEnumerateRelativePaths(NSString *rootPath)
 {
-    if ([name hasPrefix:@"rootfs/var/mobile/Library/Preferences/"]) {
-        return [@"/" stringByAppendingString:[name substringFromIndex:@"rootfs/".length]];
-    }
-
-    NSString *jailbreakRoot = DOJailbreakRootPath();
-    if (!jailbreakRoot) {
-        return nil;
-    }
-
-    NSArray<NSString *> *allowed = @[
-        @"jbroot/var/mobile/Library/Preferences/",
-        @"jbroot/etc/apt/sources.list.d/",
-        @"jbroot/etc/apt/preferences.d/"
-    ];
-    for (NSString *prefix in allowed) {
-        if ([name hasPrefix:prefix]) {
-            return [jailbreakRoot stringByAppendingPathComponent:[name substringFromIndex:@"jbroot/".length]];
+    NSMutableArray<NSString *> *relativePaths = [NSMutableArray array];
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    NSString *rootPrefix = [rootPath stringByAppendingString:@"/"];
+    NSURL *rootURL = [NSURL fileURLWithPath:rootPath isDirectory:YES];
+    NSDirectoryEnumerator<NSURL *> *enumerator = [fileManager enumeratorAtURL:rootURL includingPropertiesForKeys:@[NSURLIsSymbolicLinkKey] options:0 errorHandler:nil];
+    for (NSURL *url in enumerator) {
+        id isSymbolicLink = nil;
+        [url getResourceValue:&isSymbolicLink forKey:NSURLIsSymbolicLinkKey error:nil];
+        if ([isSymbolicLink boolValue]) {
+            [enumerator skipDescendants];
+            continue;
         }
+
+        NSString *path = url.path;
+        if (![path hasPrefix:rootPrefix]) {
+            continue;
+        }
+        [relativePaths addObject:[path substringFromIndex:rootPrefix.length]];
     }
-    return nil;
+    return relativePaths;
 }
 
-static void DOFixRestoredFileOwnership(NSString *destination)
+static void DOFixItemOwnership(NSString *path, BOOL isDirectory)
 {
-    const char *filePath = destination.fileSystemRepresentation;
-    if ([destination containsString:@"/var/mobile/"]) {
-        // Preferences must stay writable by the mobile user, otherwise tweaks can no longer save settings.
+    const char *filePath = path.fileSystemRepresentation;
+    if (!filePath) {
+        return;
+    }
+    if ([path hasPrefix:@"/var/mobile/"]) {
         chown(filePath, 501, 501);
     }
-    chmod(filePath, 0644);
+    chmod(filePath, isDirectory ? 0755 : 0644);
+}
+
+static void DOFixTreeOwnership(NSString *rootPath)
+{
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    BOOL isDirectory = NO;
+    if (![fileManager fileExistsAtPath:rootPath isDirectory:&isDirectory]) {
+        return;
+    }
+    DOFixItemOwnership(rootPath, isDirectory);
+
+    for (NSString *relativePath in DOEnumerateRelativePaths(rootPath)) {
+        NSString *path = [rootPath stringByAppendingPathComponent:relativePath];
+        BOOL itemIsDirectory = NO;
+        if (![fileManager fileExistsAtPath:path isDirectory:&itemIsDirectory]) {
+            continue;
+        }
+        DOFixItemOwnership(path, itemIsDirectory);
+    }
+}
+
+static BOOL DOCopyTree(NSString *sourcePath, NSString *destinationPath, NSUInteger *fileCount, unsigned long long *totalBytes, NSError *_Nullable *_Nullable error)
+{
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    if (![fileManager createDirectoryAtPath:destinationPath withIntermediateDirectories:YES attributes:nil error:error]) {
+        return NO;
+    }
+
+    for (NSString *relativePath in DOEnumerateRelativePaths(sourcePath)) {
+        NSString *fromPath = [sourcePath stringByAppendingPathComponent:relativePath];
+        NSString *toPath = [destinationPath stringByAppendingPathComponent:relativePath];
+
+        BOOL isDirectory = NO;
+        if (![fileManager fileExistsAtPath:fromPath isDirectory:&isDirectory]) {
+            continue;
+        }
+
+        if (isDirectory) {
+            if (![fileManager createDirectoryAtPath:toPath withIntermediateDirectories:YES attributes:nil error:error]) {
+                return NO;
+            }
+            continue;
+        }
+
+        NSDictionary *attributes = [fileManager attributesOfItemAtPath:fromPath error:nil];
+        unsigned long long size = [attributes[NSFileSize] unsignedLongLongValue];
+        if (size > DOConfigBackupMaximumFileBytes || (totalBytes != NULL && *totalBytes + size > DOConfigBackupMaximumTotalBytes)) {
+            if (error) {
+                *error = DOConfigBackupErrorForCode(2);
+            }
+            return NO;
+        }
+
+        if (![fileManager createDirectoryAtPath:[toPath stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:error]) {
+            return NO;
+        }
+        [fileManager removeItemAtPath:toPath error:nil];
+        if (![fileManager copyItemAtPath:fromPath toPath:toPath error:error]) {
+            return NO;
+        }
+
+        if (fileCount) {
+            *fileCount += 1;
+        }
+        if (totalBytes) {
+            *totalBytes += size;
+        }
+    }
+
+    return YES;
 }
 
 #pragma mark - DOConfigBackup
 
+@interface DOConfigBackup ()
++ (void)removeOldBackupsBeyond:(NSUInteger)maximumCount;
+@end
+
 @implementation DOConfigBackup
+
++ (NSURL *)defaultBackupDirectoryURL
+{
+    NSURL *documentsURL = [[[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask] firstObject];
+    if (!documentsURL) {
+        documentsURL = [NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES];
+    }
+    return [documentsURL URLByAppendingPathComponent:@"ConfigurationBackups" isDirectory:YES];
+}
 
 + (NSString *)backupDirectory
 {
     return [self backupDirectoryURL].path;
 }
 
-+ (NSURL *)defaultBackupDirectoryURL
-{
-    NSString *documents = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
-    if (!documents) {
-        documents = NSTemporaryDirectory();
-    }
-    return [NSURL fileURLWithPath:[documents stringByAppendingPathComponent:@"ConfigurationBackups"] isDirectory:YES];
-}
-
 + (NSURL *)configuredBackupDirectoryURL
 {
     NSString *path = [[NSUserDefaults standardUserDefaults] stringForKey:DOConfigBackupDirectoryPathKey];
-    if (!path.length) {
+    if (path.length == 0) {
         return nil;
     }
     return [NSURL fileURLWithPath:path isDirectory:YES];
@@ -172,10 +230,9 @@ static void DOFixRestoredFileOwnership(NSString *destination)
 + (void)setConfiguredBackupDirectoryURL:(NSURL *)url
 {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    if (!url) {
+    if (!url.path.length) {
         [defaults removeObjectForKey:DOConfigBackupDirectoryPathKey];
-    }
-    else {
+    } else {
         [defaults setObject:url.path forKey:DOConfigBackupDirectoryPathKey];
     }
     [defaults synchronize];
@@ -191,278 +248,196 @@ static void DOFixRestoredFileOwnership(NSString *destination)
 + (NSArray<NSDictionary *> *)availableBackups
 {
     NSFileManager *fileManager = [NSFileManager defaultManager];
-    NSString *directory = ([self configuredBackupDirectoryURL] ?: [self defaultBackupDirectoryURL]).path;
-    NSArray<NSString *> *items = [fileManager contentsOfDirectoryAtPath:directory error:nil];
+    NSString *basePath = ([self configuredBackupDirectoryURL] ?: [self defaultBackupDirectoryURL]).path;
+    NSArray<NSString *> *entries = [fileManager contentsOfDirectoryAtPath:basePath error:nil];
     NSMutableArray<NSDictionary *> *backups = [NSMutableArray array];
 
-    for (NSString *item in items) {
-        if (![item.pathExtension isEqualToString:@"zip"]) {
+    for (NSString *entry in entries) {
+        if (![entry hasPrefix:DOConfigBackupNamePrefix]) {
             continue;
         }
-        NSString *path = [directory stringByAppendingPathComponent:item];
+
+        NSString *path = [basePath stringByAppendingPathComponent:entry];
+        BOOL isDirectory = NO;
+        if (![fileManager fileExistsAtPath:path isDirectory:&isDirectory] || !isDirectory) {
+            continue;
+        }
+
+        NSData *manifestData = [NSData dataWithContentsOfFile:[path stringByAppendingPathComponent:DOConfigBackupManifestName]];
+        if (!manifestData) {
+            continue;
+        }
+        NSDictionary *manifest = [NSJSONSerialization JSONObjectWithData:manifestData options:0 error:nil];
+
         NSDictionary *attributes = [fileManager attributesOfItemAtPath:path error:nil];
-        if (!attributes) {
-            continue;
-        }
+        id totalBytes = [manifest isKindOfClass:[NSDictionary class]] ? manifest[@"totalBytes"] : nil;
         [backups addObject:@{
             @"path": path,
-            @"name": item,
+            @"name": entry,
             @"date": attributes[NSFileModificationDate] ?: [NSDate date],
-            @"size": attributes[NSFileSize] ?: @0
+            @"size": [totalBytes isKindOfClass:[NSNumber class]] ? totalBytes : @0,
         }];
     }
 
-    [backups sortUsingComparator:^NSComparisonResult(NSDictionary *lhs, NSDictionary *rhs) {
-        return [rhs[@"name"] compare:lhs[@"name"]];
+    [backups sortUsingComparator:^NSComparisonResult(NSDictionary *first, NSDictionary *second) {
+        return [second[@"name"] compare:first[@"name"]];
     }];
+
     return backups;
 }
 
-+ (BOOL)createBackupWithError:(NSError *_Nullable *_Nullable)error
++ (void)removeOldBackupsBeyond:(NSUInteger)maximumCount
+{
+    NSArray<NSDictionary *> *backups = [self availableBackups];
+    if (backups.count <= maximumCount) {
+        return;
+    }
+
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    for (NSUInteger index = maximumCount; index < backups.count; index++) {
+        [fileManager removeItemAtPath:backups[index][@"path"] error:nil];
+    }
+}
+
++ (BOOL)createBackupWithError:(NSError **)error
 {
     NSFileManager *fileManager = [NSFileManager defaultManager];
-    NSMutableArray<NSDictionary *> *entries = [NSMutableArray array];
+    NSString *basePath = [self backupDirectoryURL].path;
+    if (basePath.length == 0) {
+        if (error) {
+            *error = DOConfigBackupErrorForCode(2);
+        }
+        return NO;
+    }
 
-    for (NSDictionary *source in DOBackupSources()) {
-        NSString *directory = source[@"path"];
+    NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
+    dateFormatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+    dateFormatter.timeZone = [NSTimeZone localTimeZone];
+    dateFormatter.dateFormat = @"yyyyMMdd-HHmmss";
+
+    NSString *baseName = [DOConfigBackupNamePrefix stringByAppendingString:[dateFormatter stringFromDate:[NSDate date]]];
+    NSString *folderPath = [basePath stringByAppendingPathComponent:baseName];
+    for (NSUInteger suffix = 2; [fileManager fileExistsAtPath:folderPath]; suffix++) {
+        folderPath = [basePath stringByAppendingPathComponent:[baseName stringByAppendingFormat:@"-%lu", (unsigned long)suffix]];
+    }
+
+    NSError *createError = nil;
+    if (![fileManager createDirectoryAtPath:folderPath withIntermediateDirectories:YES attributes:nil error:&createError]) {
+        if (error) {
+            *error = createError ?: DOConfigBackupErrorForCode(2);
+        }
+        return NO;
+    }
+
+    NSUInteger fileCount = 0;
+    unsigned long long totalBytes = 0;
+    NSMutableArray<NSString *> *capturedRoots = [NSMutableArray array];
+
+    for (NSDictionary *root in DOBackupRoots()) {
+        NSString *sourcePath = root[@"source"];
         BOOL isDirectory = NO;
-        if (![fileManager fileExistsAtPath:directory isDirectory:&isDirectory] || !isDirectory) {
+        if (![fileManager fileExistsAtPath:sourcePath isDirectory:&isDirectory] || !isDirectory) {
             continue;
         }
 
-        BOOL plistOnly = [source[@"mode"] isEqualToString:@"plist"];
-        for (NSString *item in [fileManager contentsOfDirectoryAtPath:directory error:nil]) {
-            if ([item hasPrefix:@"."]) {
-                continue;
+        NSString *destinationPath = [folderPath stringByAppendingPathComponent:root[@"relative"]];
+        NSError *copyError = nil;
+        if (!DOCopyTree(sourcePath, destinationPath, &fileCount, &totalBytes, &copyError)) {
+            [fileManager removeItemAtPath:folderPath error:nil];
+            if (error) {
+                *error = copyError ?: DOConfigBackupErrorForCode(2);
             }
-            if (plistOnly && ![item.pathExtension isEqualToString:@"plist"]) {
-                continue;
-            }
-
-            NSString *absolutePath = [directory stringByAppendingPathComponent:item];
-            BOOL itemIsDirectory = NO;
-            if (![fileManager fileExistsAtPath:absolutePath isDirectory:&itemIsDirectory] || itemIsDirectory) {
-                continue;
-            }
-
-            NSData *contents = [NSData dataWithContentsOfFile:absolutePath];
-            if (!contents) {
-                continue;
-            }
-
-            [entries addObject:@{ @"name": [source[@"archive"] stringByAppendingPathComponent:item], @"data": contents }];
+            return NO;
         }
+
+        [capturedRoots addObject:root[@"relative"]];
     }
 
-    if (entries.count == 0) {
+    if (fileCount == 0) {
+        [fileManager removeItemAtPath:folderPath error:nil];
         if (error) {
-            *error = [NSError errorWithDomain:DOConfigBackupErrorDomain code:1 userInfo:@{ NSLocalizedDescriptionKey: DOLocalizedString(@"Backup_Error_Nothing") }];
+            *error = DOConfigBackupErrorForCode(1);
         }
         return NO;
     }
 
+    NSDateFormatter *isoFormatter = [[NSDateFormatter alloc] init];
+    isoFormatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+    isoFormatter.timeZone = [NSTimeZone localTimeZone];
+    isoFormatter.dateFormat = @"yyyy-MM-dd'T'HH:mm:ssZZZZZ";
+
+    id appVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     NSDictionary *manifest = @{
-        @"version": [[DOEnvironmentManager sharedManager] appVersion] ?: @"",
-        @"date": [NSDate date].description ?: @"",
-        @"files": @(entries.count)
+        @"version": [appVersion isKindOfClass:[NSString class]] ? appVersion : @"",
+        @"date": [isoFormatter stringFromDate:[NSDate date]],
+        @"roots": capturedRoots,
+        @"fileCount": @(fileCount),
+        @"totalBytes": @(totalBytes),
     };
+
     NSData *manifestData = [NSJSONSerialization dataWithJSONObject:manifest options:NSJSONWritingPrettyPrinted error:nil];
-    if (manifestData) {
-        [entries insertObject:@{ @"name": @"manifest.json", @"data": manifestData } atIndex:0];
-    }
-
-    NSMutableData *archive = [NSMutableData data];
-    NSMutableData *centralDirectory = [NSMutableData data];
-    uint16_t dosTime = 0;
-    uint16_t dosDate = 0;
-    DODosDateTime([NSDate date], &dosTime, &dosDate);
-    uint16_t entryCount = 0;
-
-    for (NSDictionary *entry in entries) {
-        NSData *contents = entry[@"data"];
-        NSData *nameData = [entry[@"name"] dataUsingEncoding:NSUTF8StringEncoding];
-        if (!nameData) {
-            continue;
-        }
-
-        uint32_t crc = DOCRC32(contents.bytes, contents.length);
-        uint32_t offset = (uint32_t)archive.length;
-        uint32_t size = (uint32_t)contents.length;
-
-        DOAppendLE32(archive, 0x04034B50);
-        DOAppendLE16(archive, 20);
-        DOAppendLE16(archive, 0x0800);
-        DOAppendLE16(archive, 0);
-        DOAppendLE16(archive, dosTime);
-        DOAppendLE16(archive, dosDate);
-        DOAppendLE32(archive, crc);
-        DOAppendLE32(archive, size);
-        DOAppendLE32(archive, size);
-        DOAppendLE16(archive, (uint16_t)nameData.length);
-        DOAppendLE16(archive, 0);
-        [archive appendData:nameData];
-        [archive appendData:contents];
-
-        DOAppendLE32(centralDirectory, 0x02014B50);
-        DOAppendLE16(centralDirectory, 20);
-        DOAppendLE16(centralDirectory, 20);
-        DOAppendLE16(centralDirectory, 0x0800);
-        DOAppendLE16(centralDirectory, 0);
-        DOAppendLE16(centralDirectory, dosTime);
-        DOAppendLE16(centralDirectory, dosDate);
-        DOAppendLE32(centralDirectory, crc);
-        DOAppendLE32(centralDirectory, size);
-        DOAppendLE32(centralDirectory, size);
-        DOAppendLE16(centralDirectory, (uint16_t)nameData.length);
-        DOAppendLE16(centralDirectory, 0);
-        DOAppendLE16(centralDirectory, 0);
-        DOAppendLE16(centralDirectory, 0);
-        DOAppendLE16(centralDirectory, 0);
-        DOAppendLE32(centralDirectory, 0);
-        DOAppendLE32(centralDirectory, offset);
-        [centralDirectory appendData:nameData];
-
-        entryCount++;
-    }
-
-    uint32_t centralDirectoryOffset = (uint32_t)archive.length;
-    [archive appendData:centralDirectory];
-
-    DOAppendLE32(archive, 0x06054B50);
-    DOAppendLE16(archive, 0);
-    DOAppendLE16(archive, 0);
-    DOAppendLE16(archive, entryCount);
-    DOAppendLE16(archive, entryCount);
-    DOAppendLE32(archive, (uint32_t)centralDirectory.length);
-    DOAppendLE32(archive, centralDirectoryOffset);
-    DOAppendLE16(archive, 0);
-
-    NSString *directory = [self backupDirectoryURL].path;
-    [fileManager createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:nil];
-
-    NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
-    formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
-    formatter.timeZone = [NSTimeZone localTimeZone];
-    formatter.dateFormat = @"yyyyMMdd-HHmmss";
-    NSString *fileName = [NSString stringWithFormat:@"Configuration-%@.zip", [formatter stringFromDate:[NSDate date]]];
-    NSString *path = [directory stringByAppendingPathComponent:fileName];
-
-    if (![archive writeToFile:path atomically:YES]) {
+    if (!manifestData || ![manifestData writeToFile:[folderPath stringByAppendingPathComponent:DOConfigBackupManifestName] atomically:YES]) {
+        [fileManager removeItemAtPath:folderPath error:nil];
         if (error) {
-            *error = [NSError errorWithDomain:DOConfigBackupErrorDomain code:2 userInfo:@{ NSLocalizedDescriptionKey: DOLocalizedString(@"Backup_Error_Write") }];
+            *error = DOConfigBackupErrorForCode(2);
         }
         return NO;
     }
 
-    // Keep only the most recent archives so the app container does not grow forever.
-    NSArray<NSDictionary *> *backups = [self availableBackups];
-    if (backups.count > DO_CONFIG_BACKUP_MAX_COUNT) {
-        for (NSUInteger index = DO_CONFIG_BACKUP_MAX_COUNT; index < backups.count; index++) {
-            [fileManager removeItemAtPath:backups[index][@"path"] error:nil];
-        }
-    }
-
+    [self removeOldBackupsBeyond:DO_CONFIG_BACKUP_MAX_COUNT];
     return YES;
 }
 
-+ (BOOL)restoreBackupAtPath:(NSString *)path error:(NSError *_Nullable *_Nullable)error
++ (BOOL)restoreBackupAtPath:(NSString *)path error:(NSError **)error
 {
     NSFileManager *fileManager = [NSFileManager defaultManager];
-    NSData *archive = [NSData dataWithContentsOfFile:path];
-    if (!archive) {
+    BOOL isDirectory = NO;
+    if (![fileManager fileExistsAtPath:path isDirectory:&isDirectory] || !isDirectory) {
         if (error) {
-            *error = [NSError errorWithDomain:DOConfigBackupErrorDomain code:3 userInfo:@{ NSLocalizedDescriptionKey: DOLocalizedString(@"Backup_Error_Read") }];
+            *error = DOConfigBackupErrorForCode(5);
+        }
+        return NO;
+    }
+    if (![fileManager fileExistsAtPath:[path stringByAppendingPathComponent:DOConfigBackupManifestName]]) {
+        if (error) {
+            *error = DOConfigBackupErrorForCode(5);
         }
         return NO;
     }
 
-    const uint8_t *bytes = archive.bytes;
-    NSUInteger length = archive.length;
-    if (length < 22) {
+    NSUInteger restoredFileCount = 0;
+
+    for (NSDictionary *root in DOBackupRoots()) {
+        NSString *sourcePath = [path stringByAppendingPathComponent:root[@"relative"]];
+        BOOL sourceIsDirectory = NO;
+        if (![fileManager fileExistsAtPath:sourcePath isDirectory:&sourceIsDirectory] || !sourceIsDirectory) {
+            continue;
+        }
+
+        NSString *destinationPath = root[@"source"];
+        BOOL destinationIsDirectory = NO;
+        if (![fileManager fileExistsAtPath:destinationPath isDirectory:&destinationIsDirectory]) {
+            if (![fileManager createDirectoryAtPath:destinationPath withIntermediateDirectories:YES attributes:nil error:error]) {
+                return NO;
+            }
+        } else if (!destinationIsDirectory) {
+            if (error) {
+                *error = DOConfigBackupErrorForCode(5);
+            }
+            return NO;
+        }
+
+        NSUInteger copiedCount = 0;
+        if (!DOCopyTree(sourcePath, destinationPath, &copiedCount, NULL, error)) {
+            return NO;
+        }
+        restoredFileCount += copiedCount;
+        DOFixTreeOwnership(destinationPath);
+    }
+
+    if (restoredFileCount == 0) {
         if (error) {
-            *error = [NSError errorWithDomain:DOConfigBackupErrorDomain code:4 userInfo:@{ NSLocalizedDescriptionKey: DOLocalizedString(@"Backup_Error_Truncated") }];
-        }
-        return NO;
-    }
-
-    NSInteger endOfCentralDirectory = -1;
-    for (NSInteger index = (NSInteger)length - 22; index >= 0; index--) {
-        if (DOReadLE32(bytes + index) == 0x06054B50) {
-            endOfCentralDirectory = index;
-            break;
-        }
-    }
-    if (endOfCentralDirectory < 0) {
-        if (error) {
-            *error = [NSError errorWithDomain:DOConfigBackupErrorDomain code:5 userInfo:@{ NSLocalizedDescriptionKey: DOLocalizedString(@"Backup_Error_Invalid") }];
-        }
-        return NO;
-    }
-
-    uint16_t totalEntries = DOReadLE16(bytes + endOfCentralDirectory + 10);
-    uint32_t centralDirectorySize = DOReadLE32(bytes + endOfCentralDirectory + 12);
-    uint32_t centralDirectoryOffset = DOReadLE32(bytes + endOfCentralDirectory + 16);
-    if ((NSUInteger)centralDirectoryOffset + centralDirectorySize > length) {
-        if (error) {
-            *error = [NSError errorWithDomain:DOConfigBackupErrorDomain code:6 userInfo:@{ NSLocalizedDescriptionKey: DOLocalizedString(@"Backup_Error_Corrupted") }];
-        }
-        return NO;
-    }
-
-    NSUInteger cursor = centralDirectoryOffset;
-    NSUInteger restoredCount = 0;
-
-    for (uint16_t index = 0; index < totalEntries; index++) {
-        if (cursor + 46 > length || DOReadLE32(bytes + cursor) != 0x02014B50) {
-            break;
-        }
-
-        uint16_t nameLength = DOReadLE16(bytes + cursor + 28);
-        uint16_t extraLength = DOReadLE16(bytes + cursor + 30);
-        uint16_t commentLength = DOReadLE16(bytes + cursor + 32);
-        uint32_t uncompressedSize = DOReadLE32(bytes + cursor + 24);
-        uint32_t localHeaderOffset = DOReadLE32(bytes + cursor + 42);
-
-        NSString *name = nil;
-        if (cursor + 46 + nameLength <= length) {
-            name = [[NSString alloc] initWithBytes:bytes + cursor + 46 length:nameLength encoding:NSUTF8StringEncoding];
-        }
-        cursor += (NSUInteger)46 + nameLength + extraLength + commentLength;
-
-        if (!name || [name isEqualToString:@"manifest.json"]) {
-            continue;
-        }
-
-        NSString *destination = DODestinationPathForEntryName(name);
-        if (!destination) {
-            continue;
-        }
-        if ((NSUInteger)localHeaderOffset + 30 > length) {
-            continue;
-        }
-
-        uint16_t localNameLength = DOReadLE16(bytes + localHeaderOffset + 26);
-        uint16_t localExtraLength = DOReadLE16(bytes + localHeaderOffset + 28);
-        NSUInteger dataOffset = (NSUInteger)localHeaderOffset + 30 + localNameLength + localExtraLength;
-        if (dataOffset + uncompressedSize > length) {
-            continue;
-        }
-
-        NSString *parentDirectory = [destination stringByDeletingLastPathComponent];
-        [fileManager createDirectoryAtPath:parentDirectory withIntermediateDirectories:YES attributes:nil error:nil];
-
-        NSData *contents = [archive subdataWithRange:NSMakeRange(dataOffset, uncompressedSize)];
-        if (![contents writeToFile:destination atomically:YES]) {
-            continue;
-        }
-
-        DOFixRestoredFileOwnership(destination);
-        restoredCount++;
-    }
-
-    if (restoredCount == 0) {
-        if (error) {
-            *error = [NSError errorWithDomain:DOConfigBackupErrorDomain code:7 userInfo:@{ NSLocalizedDescriptionKey: DOLocalizedString(@"Backup_Error_Empty") }];
+            *error = DOConfigBackupErrorForCode(7);
         }
         return NO;
     }

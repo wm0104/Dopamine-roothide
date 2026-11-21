@@ -134,12 +134,12 @@
 "Button_Backup_Restore_Existing" = "恢复备份";
 "Alert_Backup_In_Progress" = "正在创建备份...";
 "Alert_Backup_Done_Title" = "备份完成";
-"Alert_Backup_Done_Body" = "插件偏好设置与 APT 软件源已保存。你可以分享备份文件，或稍后在此菜单中恢复。";
+"Alert_Backup_Done_Body" = "配置已保存到：\n%@";
 "Alert_Backup_Failed_Title" = "备份失败";
 "Alert_Restore_Title" = "恢复备份";
-"Alert_Restore_Pick_Message" = "选择要恢复的备份。当前已加载的插件偏好设置与 APT 软件源将被替换。";
+"Alert_Restore_Pick_Message" = "选择要恢复的备份。备份中的文件会替换当前配置中的同名文件。";
 "Alert_Restore_Confirm_Title" = "要恢复此备份吗？";
-"Alert_Restore_Confirm_Body" = "当前的插件偏好设置与 APT 软件源将被该备份覆盖。恢复后请注销以让所有改动生效。";
+"Alert_Restore_Confirm_Body" = "当前配置中同名文件会被替换，缺少的文件会被新增。恢复后请注销以让所有改动生效。";
 "Alert_Restore_In_Progress" = "正在恢复备份...";
 "Alert_Restore_Done_Title" = "恢复完成";
 "Alert_Restore_Done_Body" = "配置已恢复。请注销以应用所有改动。";
@@ -149,7 +149,7 @@
 "Backup_Error_Write" = "写入备份文件失败。";
 "Backup_Error_Read" = "读取备份文件失败。";
 "Backup_Error_Truncated" = "备份文件不完整。";
-"Backup_Error_Invalid" = "这不是 Dopamine 的备份文件。";
+"Backup_Error_Invalid" = "这不是 Dopamine 的备份文件夹。";
 "Backup_Error_Corrupted" = "备份文件已损坏。";
 "Backup_Error_Empty" = "该备份中没有可恢复的配置。";
 // 备份位置

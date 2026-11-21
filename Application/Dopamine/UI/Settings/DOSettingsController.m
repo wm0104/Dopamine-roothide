@@ -831,28 +831,12 @@
                     return;
                 }
 
-                UIAlertController *alertController = [UIAlertController alertControllerWithTitle:DOLocalizedString(@"Alert_Backup_Done_Title") message:DOLocalizedString(@"Alert_Backup_Done_Body") preferredStyle:UIAlertControllerStyleAlert];
-                [alertController addAction:[UIAlertAction actionWithTitle:DOLocalizedString(@"Button_Share") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-                    [self shareLatestConfigurationBackup];
-                }]];
+                UIAlertController *alertController = [UIAlertController alertControllerWithTitle:DOLocalizedString(@"Alert_Backup_Done_Title") message:[NSString stringWithFormat:DOLocalizedString(@"Alert_Backup_Done_Body"), [DOConfigBackup availableBackups].firstObject[@"path"] ?: [DOConfigBackup backupDirectory]] preferredStyle:UIAlertControllerStyleAlert];
                 [alertController addAction:[UIAlertAction actionWithTitle:DOLocalizedString(@"Button_Close") style:UIAlertActionStyleCancel handler:nil]];
                 [self presentViewController:alertController animated:YES completion:nil];
             }];
         });
     });
-}
-
-- (void)shareLatestConfigurationBackup
-{
-    NSDictionary *backup = [DOConfigBackup availableBackups].firstObject;
-    if (!backup) {
-        return;
-    }
-
-    UIActivityViewController *activityViewController = [[UIActivityViewController alloc] initWithActivityItems:@[[NSURL fileURLWithPath:backup[@"path"]]] applicationActivities:nil];
-    activityViewController.popoverPresentationController.sourceView = self.view;
-    activityViewController.popoverPresentationController.sourceRect = self.view.bounds;
-    [self presentViewController:activityViewController animated:YES completion:nil];
 }
 
 - (void)presentRestorePickerWithBackups:(NSArray<NSDictionary *> *)backups
