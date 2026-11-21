@@ -142,9 +142,9 @@
 "Alert_Backup_Done_Body" = "Your configuration has been saved to:\n%@";
 "Alert_Backup_Failed_Title" = "Backup Failed";
 "Alert_Restore_Title" = "Restore Backup";
-"Alert_Restore_Pick_Message" = "Select a backup to restore. Files in the backup will replace the matching files in your current configuration.";
+"Alert_Restore_Pick_Message" = "Select a backup to restore.";
 "Alert_Restore_Confirm_Title" = "Restore This Backup?";
-"Alert_Restore_Confirm_Body" = "Matching files in your current configuration will be replaced, and missing files will be added. Respring afterwards for all changes to take effect.";
+"Alert_Restore_Confirm_Body" = "This replaces each configuration or package source directory included in the backup. Current files in those directories that are not in the backup will be removed. Respring afterwards for all changes to take effect.";
 "Alert_Restore_In_Progress" = "Restoring Backup...";
 "Alert_Restore_Done_Title" = "Restore Complete";
 "Alert_Restore_Done_Body" = "Your configuration has been restored. Respring to apply all changes.";

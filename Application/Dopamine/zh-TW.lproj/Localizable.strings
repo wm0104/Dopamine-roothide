@@ -142,9 +142,9 @@
 "Alert_Backup_Done_Body" = "設定已儲存到：\n%@";
 "Alert_Backup_Failed_Title" = "備份失敗";
 "Alert_Restore_Title" = "還原備份";
-"Alert_Restore_Pick_Message" = "選擇要還原的備份。備份中的檔案會取代目前設定中的同名檔案。";
+"Alert_Restore_Pick_Message" = "選擇要還原的備份。";
 "Alert_Restore_Confirm_Title" = "要還原此備份嗎？";
-"Alert_Restore_Confirm_Body" = "目前設定中的同名檔案會被取代，缺少的檔案會被新增。還原後請登出以讓所有改動生效。";
+"Alert_Restore_Confirm_Body" = "還原會整個取代備份所包含的設定或套件來源目錄。這些目錄中未備份的現有檔案會被移除。還原後請重新載入桌面以套用所有改動。";
 "Alert_Restore_In_Progress" = "正在還原備份...";
 "Alert_Restore_Done_Title" = "還原完成";
 "Alert_Restore_Done_Body" = "設定已還原。請重新載入桌面以套用所有改動。";
