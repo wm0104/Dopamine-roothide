@@ -20,6 +20,7 @@
 #import "DOSceneDelegate.h"
 #import "DOPSJetsamListItemsController.h"
 #import "DOButtonCell.h"
+#import "DOConfigBackup.h"
 
 @interface DOSettingsController ()
 
@@ -292,6 +293,14 @@
                 [specifiers addObject:actionsGroupSpecifier];
 
                 if (envManager.isJailbroken) {
+                    PSSpecifier *backupRestoreSpecifier = [PSSpecifier preferenceSpecifierNamed:@"" target:self set:defSetter get:defGetter detail:nil cell:PSStaticTextCell edit:nil];
+                    [backupRestoreSpecifier setProperty:@"Button_Backup_Restore" forKey:@"title"];
+                    [backupRestoreSpecifier setProperty:[DOButtonCell class] forKey:@"cellClass"];
+                    [backupRestoreSpecifier setProperty:buttonHeight forKey:@"height"];
+                    [backupRestoreSpecifier setProperty:@"archivebox" forKey:@"image"];
+                    [backupRestoreSpecifier setProperty:@"backupRestorePressed" forKey:@"action"];
+                    [specifiers addObject:backupRestoreSpecifier];
+
                     PSSpecifier *refreshAppsSpecifier = [PSSpecifier preferenceSpecifierNamed:@"" target:self set:defSetter get:defGetter detail:nil cell:PSStaticTextCell edit:nil];
                     [refreshAppsSpecifier setProperty:@"Button_Refresh_Jailbreak_Apps" forKey:@"title"];
                     [refreshAppsSpecifier setProperty:[DOButtonCell class] forKey:@"cellClass"];
@@ -691,6 +700,150 @@
 	else {
 		[self changeMobilePassword];
 	}
+}
+
+#pragma mark - Configuration Backup
+
+- (void)backupRestorePressed
+{
+    NSArray<NSDictionary *> *backups = [DOConfigBackup availableBackups];
+    NSString *message = backups.count ? DOLocalizedString(@"Alert_Backup_Message_Existing") : DOLocalizedString(@"Alert_Backup_Message_None");
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:DOLocalizedString(@"Alert_Backup_Title") message:message preferredStyle:UIAlertControllerStyleActionSheet];
+
+    [alertController addAction:[UIAlertAction actionWithTitle:DOLocalizedString(@"Button_Backup_Create") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        [self performConfigurationBackup];
+    }]];
+
+    if (backups.count > 0) {
+        [alertController addAction:[UIAlertAction actionWithTitle:DOLocalizedString(@"Button_Backup_Restore_Existing") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            [self presentRestorePickerWithBackups:backups];
+        }]];
+    }
+
+    [alertController addAction:[UIAlertAction actionWithTitle:DOLocalizedString(@"Button_Cancel") style:UIAlertActionStyleCancel handler:nil]];
+    alertController.popoverPresentationController.sourceView = self.view;
+    alertController.popoverPresentationController.sourceRect = self.view.bounds;
+    [self presentViewController:alertController animated:YES completion:nil];
+}
+
+- (UIAlertController *)presentProgressAlertWithTitle:(NSString *)title
+{
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:title message:@"\n" preferredStyle:UIAlertControllerStyleAlert];
+    UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+    spinner.translatesAutoresizingMaskIntoConstraints = NO;
+    [alertController.view addSubview:spinner];
+    [NSLayoutConstraint activateConstraints:@[
+        [spinner.centerXAnchor constraintEqualToAnchor:alertController.view.centerXAnchor],
+        [spinner.bottomAnchor constraintEqualToAnchor:alertController.view.bottomAnchor constant:-20],
+    ]];
+    [self presentViewController:alertController animated:YES completion:^{
+        [spinner startAnimating];
+    }];
+    return alertController;
+}
+
+- (void)presentSimpleAlertWithTitle:(NSString *)title message:(NSString *)message
+{
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
+    [alertController addAction:[UIAlertAction actionWithTitle:DOLocalizedString(@"Button_Close") style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:alertController animated:YES completion:nil];
+}
+
+- (void)performConfigurationBackup
+{
+    UIAlertController *progressAlertController = [self presentProgressAlertWithTitle:DOLocalizedString(@"Alert_Backup_In_Progress")];
+
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        __block BOOL success = NO;
+        __block NSError *backupError = nil;
+        [[DOEnvironmentManager sharedManager] runAsRoot:^{
+            success = [DOConfigBackup createBackupWithError:&backupError];
+        }];
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [progressAlertController dismissViewControllerAnimated:YES completion:^{
+                if (!success) {
+                    [self presentSimpleAlertWithTitle:DOLocalizedString(@"Alert_Backup_Failed_Title") message:backupError.localizedDescription];
+                    return;
+                }
+
+                UIAlertController *alertController = [UIAlertController alertControllerWithTitle:DOLocalizedString(@"Alert_Backup_Done_Title") message:DOLocalizedString(@"Alert_Backup_Done_Body") preferredStyle:UIAlertControllerStyleAlert];
+                [alertController addAction:[UIAlertAction actionWithTitle:DOLocalizedString(@"Button_Share") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+                    [self shareLatestConfigurationBackup];
+                }]];
+                [alertController addAction:[UIAlertAction actionWithTitle:DOLocalizedString(@"Button_Close") style:UIAlertActionStyleCancel handler:nil]];
+                [self presentViewController:alertController animated:YES completion:nil];
+            }];
+        });
+    });
+}
+
+- (void)shareLatestConfigurationBackup
+{
+    NSDictionary *backup = [DOConfigBackup availableBackups].firstObject;
+    if (!backup) {
+        return;
+    }
+
+    UIActivityViewController *activityViewController = [[UIActivityViewController alloc] initWithActivityItems:@[[NSURL fileURLWithPath:backup[@"path"]]] applicationActivities:nil];
+    activityViewController.popoverPresentationController.sourceView = self.view;
+    activityViewController.popoverPresentationController.sourceRect = self.view.bounds;
+    [self presentViewController:activityViewController animated:YES completion:nil];
+}
+
+- (void)presentRestorePickerWithBackups:(NSArray<NSDictionary *> *)backups
+{
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:DOLocalizedString(@"Alert_Restore_Title") message:DOLocalizedString(@"Alert_Restore_Pick_Message") preferredStyle:UIAlertControllerStyleActionSheet];
+    NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+    formatter.dateStyle = NSDateFormatterMediumStyle;
+    formatter.timeStyle = NSDateFormatterShortStyle;
+
+    for (NSDictionary *backup in backups) {
+        NSString *title = [formatter stringFromDate:backup[@"date"]];
+        [alertController addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            [self confirmRestoreBackup:backup];
+        }]];
+    }
+
+    [alertController addAction:[UIAlertAction actionWithTitle:DOLocalizedString(@"Button_Cancel") style:UIAlertActionStyleCancel handler:nil]];
+    alertController.popoverPresentationController.sourceView = self.view;
+    alertController.popoverPresentationController.sourceRect = self.view.bounds;
+    [self presentViewController:alertController animated:YES completion:nil];
+}
+
+- (void)confirmRestoreBackup:(NSDictionary *)backup
+{
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:DOLocalizedString(@"Alert_Restore_Confirm_Title") message:DOLocalizedString(@"Alert_Restore_Confirm_Body") preferredStyle:UIAlertControllerStyleAlert];
+    [alertController addAction:[UIAlertAction actionWithTitle:DOLocalizedString(@"Button_Continue") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+        [self restoreConfigurationBackup:backup];
+    }]];
+    [alertController addAction:[UIAlertAction actionWithTitle:DOLocalizedString(@"Button_Cancel") style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:alertController animated:YES completion:nil];
+}
+
+- (void)restoreConfigurationBackup:(NSDictionary *)backup
+{
+    UIAlertController *progressAlertController = [self presentProgressAlertWithTitle:DOLocalizedString(@"Alert_Restore_In_Progress")];
+    NSString *path = backup[@"path"];
+
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        __block BOOL success = NO;
+        __block NSError *restoreError = nil;
+        [[DOEnvironmentManager sharedManager] runAsRoot:^{
+            success = [DOConfigBackup restoreBackupAtPath:path error:&restoreError];
+        }];
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [progressAlertController dismissViewControllerAnimated:YES completion:^{
+                if (success) {
+                    [self presentSimpleAlertWithTitle:DOLocalizedString(@"Alert_Restore_Done_Title") message:DOLocalizedString(@"Alert_Restore_Done_Body")];
+                }
+                else {
+                    [self presentSimpleAlertWithTitle:DOLocalizedString(@"Alert_Restore_Failed_Title") message:restoreError.localizedDescription];
+                }
+            }];
+        });
+    });
 }
 
 - (void)changeMobilePassword

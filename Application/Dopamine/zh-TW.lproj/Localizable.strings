@@ -129,3 +129,31 @@
 "Status_Title_Select_Package_Managers" = "選擇套件管理器";
 "Select_Package_Managers_Install_Message" = "如果不確定該選哪一個，請選擇 Sileo";
 "Continue" = "繼續";
+
+// 備份與還原
+"Button_Backup_Restore" = "備份與還原";
+"Alert_Backup_Title" = "備份與還原";
+"Alert_Backup_Message_None" = "備份插件偏好設定與 APT 軟體源，方便日後還原。";
+"Alert_Backup_Message_Existing" = "建立新備份，或從先前的備份還原。";
+"Button_Backup_Create" = "建立備份";
+"Button_Backup_Restore_Existing" = "還原備份";
+"Alert_Backup_In_Progress" = "正在建立備份...";
+"Alert_Backup_Done_Title" = "備份完成";
+"Alert_Backup_Done_Body" = "插件偏好設定與 APT 軟體源已儲存。你可以分享備份檔案，或稍後在此選單中還原。";
+"Alert_Backup_Failed_Title" = "備份失敗";
+"Alert_Restore_Title" = "還原備份";
+"Alert_Restore_Pick_Message" = "選擇要還原的備份。目前已載入的插件偏好設定與 APT 軟體源將被取代。";
+"Alert_Restore_Confirm_Title" = "要還原此備份嗎？";
+"Alert_Restore_Confirm_Body" = "目前的插件偏好設定與 APT 軟體源將被此備份覆寫。還原後請重新載入桌面以讓所有改動生效。";
+"Alert_Restore_In_Progress" = "正在還原備份...";
+"Alert_Restore_Done_Title" = "還原完成";
+"Alert_Restore_Done_Body" = "設定已還原。請重新載入桌面以套用所有改動。";
+"Alert_Restore_Failed_Title" = "還原失敗";
+// 備份錯誤
+"Backup_Error_Nothing" = "沒有可備份的內容。";
+"Backup_Error_Write" = "寫入備份檔案失敗。";
+"Backup_Error_Read" = "讀取備份檔案失敗。";
+"Backup_Error_Truncated" = "備份檔案不完整。";
+"Backup_Error_Invalid" = "這不是 Dopamine 的備份檔案。";
+"Backup_Error_Corrupted" = "備份檔案已損毀。";
+"Backup_Error_Empty" = "此備份中沒有可還原的設定。";

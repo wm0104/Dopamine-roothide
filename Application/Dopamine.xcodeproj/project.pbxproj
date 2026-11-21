@@ -134,6 +134,7 @@
 		8C4ABEB62B52094100B43C9B /* libjailbreak.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 8CDD08422B4F6DD800A32B61 /* libjailbreak.dylib */; };
 		8C4ABEB92B520E7B00B43C9B /* libjailbreak.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 8CDD08422B4F6DD800A32B61 /* libjailbreak.dylib */; platformFilter = ios; };
 		8C4ABEBE2B52274300B43C9B /* DOPreferenceManager.m in Sources */ = {isa = PBXBuildFile; fileRef = 8C4ABEBD2B52274300B43C9B /* DOPreferenceManager.m */; };
+		AA10C0DE0000000000000003 /* DOConfigBackup.m in Sources */ = {isa = PBXBuildFile; fileRef = AA10C0DE0000000000000002 /* DOConfigBackup.m */; };
 		8C512B912B5C9F9100C6F14A /* sileo.deb in Resources */ = {isa = PBXBuildFile; fileRef = 8C512B8B2B5C9DE800C6F14A /* sileo.deb */; };
 		8C512B922B5C9F9400C6F14A /* irisin.deb in Resources */ = {isa = PBXBuildFile; fileRef = 8C512B8C2B5C9DE800C6F14A /* irisin.deb */; };
 		8C56D4BF2B7C0DF2001C03D3 /* LICENSE_ChOma.md in Resources */ = {isa = PBXBuildFile; fileRef = 8C56D4B82B7C0DF2001C03D3 /* LICENSE_ChOma.md */; };
@@ -577,6 +578,8 @@
 		8C46D7202B588875002899DB /* zdict.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = zdict.h; sourceTree = "<group>"; };
 		8C4ABEBC2B52274300B43C9B /* DOPreferenceManager.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = DOPreferenceManager.h; sourceTree = "<group>"; };
 		8C4ABEBD2B52274300B43C9B /* DOPreferenceManager.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = DOPreferenceManager.m; sourceTree = "<group>"; };
+		AA10C0DE0000000000000001 /* DOConfigBackup.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = DOConfigBackup.h; sourceTree = "<group>"; };
+		AA10C0DE0000000000000002 /* DOConfigBackup.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = DOConfigBackup.m; sourceTree = "<group>"; };
 		8C512B8B2B5C9DE800C6F14A /* sileo.deb */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = sileo.deb; sourceTree = "<group>"; };
 		8C512B8C2B5C9DE800C6F14A /* irisin.deb */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = irisin.deb; sourceTree = "<group>"; };
 		8C56D4B82B7C0DF2001C03D3 /* LICENSE_ChOma.md */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = net.daringfireball.markdown; path = LICENSE_ChOma.md; sourceTree = "<group>"; };
@@ -1085,6 +1088,8 @@
 				8C029F5F2B4E25350071DE58 /* DOEnvironmentManager.m */,
 				8C4ABEBC2B52274300B43C9B /* DOPreferenceManager.h */,
 				8C4ABEBD2B52274300B43C9B /* DOPreferenceManager.m */,
+				AA10C0DE0000000000000001 /* DOConfigBackup.h */,
+				AA10C0DE0000000000000002 /* DOConfigBackup.m */,
 			);
 			path = Jailbreak;
 			sourceTree = "<group>";
@@ -2289,6 +2294,7 @@
 				042479AC2B66916B0082581B /* DOJailbreakButton.m in Sources */,
 				8CBF1A4A2EC3B71700EB2308 /* UIImage+JPEG2000.m in Sources */,
 				8C4ABEBE2B52274300B43C9B /* DOPreferenceManager.m in Sources */,
+				AA10C0DE0000000000000003 /* DOConfigBackup.m in Sources */,
 				04DD0B472B7CBEEA0055DE4F /* DOTheme.m in Sources */,
 				04DD0B442B7CBE2E0055DE4F /* DOThemeManager.m in Sources */,
 				042479A92B66916B0082581B /* DOModalBackAction.m in Sources */,

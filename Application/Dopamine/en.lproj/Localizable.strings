@@ -129,3 +129,31 @@
 "Status_Title_Select_Package_Managers" = "Select Package Manager(s)";
 "Select_Package_Managers_Install_Message" = "If you are unsure which one to select, select Sileo";
 "Continue" = "Continue";
+
+// Configuration Backup & Restore
+"Button_Backup_Restore" = "Backup & Restore";
+"Alert_Backup_Title" = "Backup & Restore";
+"Alert_Backup_Message_None" = "Save your tweak preferences and APT sources so you can restore them later.";
+"Alert_Backup_Message_Existing" = "Create a new backup, or restore one of your previous backups.";
+"Button_Backup_Create" = "Create Backup";
+"Button_Backup_Restore_Existing" = "Restore Backup";
+"Alert_Backup_In_Progress" = "Creating Backup...";
+"Alert_Backup_Done_Title" = "Backup Complete";
+"Alert_Backup_Done_Body" = "Your tweak preferences and APT sources have been saved. You can share the backup file or restore it from this menu later.";
+"Alert_Backup_Failed_Title" = "Backup Failed";
+"Alert_Restore_Title" = "Restore Backup";
+"Alert_Restore_Pick_Message" = "Select a backup to restore. Currently loaded tweak preferences and APT sources will be replaced.";
+"Alert_Restore_Confirm_Title" = "Restore This Backup?";
+"Alert_Restore_Confirm_Body" = "Your current tweak preferences and APT sources will be overwritten by this backup. Respring afterwards for all changes to take effect.";
+"Alert_Restore_In_Progress" = "Restoring Backup...";
+"Alert_Restore_Done_Title" = "Restore Complete";
+"Alert_Restore_Done_Body" = "Your configuration has been restored. Respring to apply all changes.";
+"Alert_Restore_Failed_Title" = "Restore Failed";
+// Configuration Backup errors
+"Backup_Error_Nothing" = "There is nothing to back up.";
+"Backup_Error_Write" = "Writing the backup file failed.";
+"Backup_Error_Read" = "Reading the backup file failed.";
+"Backup_Error_Truncated" = "The backup file is incomplete.";
+"Backup_Error_Invalid" = "This file is not a Dopamine backup.";
+"Backup_Error_Corrupted" = "The backup file is corrupted.";
+"Backup_Error_Empty" = "The backup contains no restorable configuration.";
