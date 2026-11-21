@@ -135,6 +135,13 @@
 		8C4ABEB92B520E7B00B43C9B /* libjailbreak.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 8CDD08422B4F6DD800A32B61 /* libjailbreak.dylib */; platformFilter = ios; };
 		8C4ABEBE2B52274300B43C9B /* DOPreferenceManager.m in Sources */ = {isa = PBXBuildFile; fileRef = 8C4ABEBD2B52274300B43C9B /* DOPreferenceManager.m */; };
 		AA10C0DE0000000000000003 /* DOConfigBackup.m in Sources */ = {isa = PBXBuildFile; fileRef = AA10C0DE0000000000000002 /* DOConfigBackup.m */; };
+		AA10C0E00000000000000001 /* DOConfigurationPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10C0DF0000000000000001 /* DOConfigurationPath.swift */; };
+		AA10C0E00000000000000002 /* ConfigurationSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10C0DF0000000000000002 /* ConfigurationSnapshot.swift */; };
+		AA10C0E00000000000000003 /* ConfigurationDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10C0DF0000000000000003 /* ConfigurationDirectory.swift */; };
+		AA10C0E00000000000000004 /* ConfigurationTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10C0DF0000000000000004 /* ConfigurationTree.swift */; };
+		AA10C0E00000000000000005 /* ConfigurationBackupEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10C0DF0000000000000005 /* ConfigurationBackupEngine.swift */; };
+		AA10C0E00000000000000006 /* ConfigurationBackupStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10C0DF0000000000000006 /* ConfigurationBackupStorage.swift */; };
+		AA10C0E00000000000000007 /* DOConfigurationBackupBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10C0DF0000000000000007 /* DOConfigurationBackupBridge.swift */; };
 		8C512B912B5C9F9100C6F14A /* sileo.deb in Resources */ = {isa = PBXBuildFile; fileRef = 8C512B8B2B5C9DE800C6F14A /* sileo.deb */; };
 		8C512B922B5C9F9400C6F14A /* irisin.deb in Resources */ = {isa = PBXBuildFile; fileRef = 8C512B8C2B5C9DE800C6F14A /* irisin.deb */; };
 		8C56D4BF2B7C0DF2001C03D3 /* LICENSE_ChOma.md in Resources */ = {isa = PBXBuildFile; fileRef = 8C56D4B82B7C0DF2001C03D3 /* LICENSE_ChOma.md */; };
@@ -580,6 +587,13 @@
 		8C4ABEBD2B52274300B43C9B /* DOPreferenceManager.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = DOPreferenceManager.m; sourceTree = "<group>"; };
 		AA10C0DE0000000000000001 /* DOConfigBackup.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = DOConfigBackup.h; sourceTree = "<group>"; };
 		AA10C0DE0000000000000002 /* DOConfigBackup.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = DOConfigBackup.m; sourceTree = "<group>"; };
+		AA10C0DF0000000000000001 /* DOConfigurationPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DOConfigurationPath.swift; sourceTree = "<group>"; };
+		AA10C0DF0000000000000002 /* ConfigurationSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationSnapshot.swift; sourceTree = "<group>"; };
+		AA10C0DF0000000000000003 /* ConfigurationDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationDirectory.swift; sourceTree = "<group>"; };
+		AA10C0DF0000000000000004 /* ConfigurationTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationTree.swift; sourceTree = "<group>"; };
+		AA10C0DF0000000000000005 /* ConfigurationBackupEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationBackupEngine.swift; sourceTree = "<group>"; };
+		AA10C0DF0000000000000006 /* ConfigurationBackupStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationBackupStorage.swift; sourceTree = "<group>"; };
+		AA10C0DF0000000000000007 /* DOConfigurationBackupBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DOConfigurationBackupBridge.swift; sourceTree = "<group>"; };
 		8C512B8B2B5C9DE800C6F14A /* sileo.deb */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = sileo.deb; sourceTree = "<group>"; };
 		8C512B8C2B5C9DE800C6F14A /* irisin.deb */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = irisin.deb; sourceTree = "<group>"; };
 		8C56D4B82B7C0DF2001C03D3 /* LICENSE_ChOma.md */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = net.daringfireball.markdown; path = LICENSE_ChOma.md; sourceTree = "<group>"; };
@@ -1094,6 +1108,20 @@
 			path = Jailbreak;
 			sourceTree = "<group>";
 		};
+		AA10C0DF0000000000000008 /* Configuration */ = {
+			isa = PBXGroup;
+			children = (
+				AA10C0DF0000000000000001 /* DOConfigurationPath.swift */,
+				AA10C0DF0000000000000002 /* ConfigurationSnapshot.swift */,
+				AA10C0DF0000000000000003 /* ConfigurationDirectory.swift */,
+				AA10C0DF0000000000000004 /* ConfigurationTree.swift */,
+				AA10C0DF0000000000000005 /* ConfigurationBackupEngine.swift */,
+				AA10C0DF0000000000000006 /* ConfigurationBackupStorage.swift */,
+				AA10C0DF0000000000000007 /* DOConfigurationBackupBridge.swift */,
+			);
+			path = Configuration;
+			sourceTree = "<group>";
+		};
 		8C029F642B4E2E7D0071DE58 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
@@ -1358,6 +1386,7 @@
 				8C9E46262ACA1C5800B5456A /* Extensions */,
 				8C7198322ABF130A003C6658 /* Exploits */,
 				8C029F402B4DFCFE0071DE58 /* Jailbreak */,
+				AA10C0DF0000000000000008 /* Configuration */,
 				042479672B66916B0082581B /* UI */,
 				8C7198242ABF0E84003C6658 /* Assets.xcassets */,
 				8C7198262ABF0E84003C6658 /* LaunchScreen.storyboard */,
@@ -2295,6 +2324,13 @@
 				8CBF1A4A2EC3B71700EB2308 /* UIImage+JPEG2000.m in Sources */,
 				8C4ABEBE2B52274300B43C9B /* DOPreferenceManager.m in Sources */,
 				AA10C0DE0000000000000003 /* DOConfigBackup.m in Sources */,
+				AA10C0E00000000000000001 /* DOConfigurationPath.swift in Sources */,
+				AA10C0E00000000000000002 /* ConfigurationSnapshot.swift in Sources */,
+				AA10C0E00000000000000003 /* ConfigurationDirectory.swift in Sources */,
+				AA10C0E00000000000000004 /* ConfigurationTree.swift in Sources */,
+				AA10C0E00000000000000005 /* ConfigurationBackupEngine.swift in Sources */,
+				AA10C0E00000000000000006 /* ConfigurationBackupStorage.swift in Sources */,
+				AA10C0E00000000000000007 /* DOConfigurationBackupBridge.swift in Sources */,
 				04DD0B472B7CBEEA0055DE4F /* DOTheme.m in Sources */,
 				04DD0B442B7CBE2E0055DE4F /* DOThemeManager.m in Sources */,
 				042479A92B66916B0082581B /* DOModalBackAction.m in Sources */,
