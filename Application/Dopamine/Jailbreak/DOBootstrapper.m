@@ -1019,10 +1019,6 @@ Types: deb\n\
 URIs: https://github.com/roothide/roothide.github.io/releases/download/%d/\n\
 Suites: ./\n\
 Components:\n\
-\n\
-Types: deb\n\
-URIs: https://wm0104.github.io/repo/\n\
-Suites: ./\n\
 "
 
 int getCFMajorVersion(void)
