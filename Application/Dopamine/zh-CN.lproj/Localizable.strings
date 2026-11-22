@@ -124,38 +124,3 @@
 "Status_Title_Select_Package_Managers" = "请选择包管理器";
 "Select_Package_Managers_Install_Message" = "如果你不确定选择哪一个比较好，请选择 Sileo";
 "Continue" = "继续";
-
-// 备份与恢复
-"Button_Backup_Restore" = "备份与恢复";
-"Alert_Backup_Title" = "备份与恢复";
-"Alert_Backup_Message_None" = "备份插件偏好设置与 APT 软件源，方便以后恢复。";
-"Alert_Backup_Message_Existing" = "新建备份，或从之前的备份中恢复。";
-"Button_Backup_Create" = "创建备份";
-"Button_Backup_Restore_Existing" = "恢复备份";
-"Alert_Backup_In_Progress" = "正在创建备份...";
-"Alert_Backup_Done_Title" = "备份完成";
-"Alert_Backup_Done_Body" = "配置已保存到：\n%@";
-"Alert_Backup_Failed_Title" = "备份失败";
-"Alert_Restore_Title" = "恢复备份";
-"Alert_Restore_Pick_Message" = "选择要恢复的备份。";
-"Alert_Restore_Confirm_Title" = "要恢复此备份吗？";
-"Alert_Restore_Confirm_Body" = "恢复会整体替换备份中包含的配置或软件源目录。这些目录中未备份的现有文件会被移除。恢复后请注销以应用所有改动。";
-"Alert_Restore_In_Progress" = "正在恢复备份...";
-"Alert_Restore_Done_Title" = "恢复完成";
-"Alert_Restore_Done_Body" = "配置已恢复。请注销以应用所有改动。";
-"Alert_Restore_Failed_Title" = "恢复失败";
-// 备份错误
-"Backup_Error_Nothing" = "没有可备份的内容。";
-"Backup_Error_Write" = "写入备份文件失败。";
-"Backup_Error_Read" = "读取备份文件失败。";
-"Backup_Error_Truncated" = "备份文件不完整。";
-"Backup_Error_Invalid" = "这不是 Dopamine 的备份文件夹。";
-"Backup_Error_Corrupted" = "备份文件已损坏。";
-"Backup_Error_Empty" = "该备份中没有可恢复的配置。";
-// 备份位置
-"Button_Backup_Location" = "备份位置";
-"Button_Backup_Location_Reset" = "使用默认位置";
-"Alert_Backup_Location_Current" = "备份位置：%@";
-"Alert_Backup_Location_Changed_Title" = "备份位置已更改";
-"Alert_Backup_Location_Changed_Body" = "新的备份将保存到：\n%@";
-"Backup_Location_Default" = "App 文档目录";
