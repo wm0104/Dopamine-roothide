@@ -1,0 +1,43 @@
+name: Sync bundled package managers
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: package-sync-custom-package-managers
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.sync.outputs.changed }}
+      build_sha: ${{ steps.sync.outputs.build_sha }}
+    steps:
+      - name: Checkout current custom branch
+        uses: actions/checkout@v4
+        with:
+          ref: custom-package-managers
+          fetch-depth: 0
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/scripts/
+            /Application/Dopamine/Resources/irisin.deb
+            /Application/Dopamine/Resources/sileo.deb
+      - name: Validate and sync frozen Latest assets
+        id: sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/sync-package-managers.py
+
+  build:
+    needs: sync
+    if: needs.sync.outputs.changed == 'true'
+    permissions:
+      contents: read
+    uses: wm0104/Dopamine-roothide/.github/workflows/main.yml@custom-package-managers
+    with:
+      build_sha: ${{ needs.sync.outputs.build_sha }}

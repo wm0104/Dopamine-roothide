@@ -12,6 +12,16 @@ on:
     paths-ignore:
       - ".gitignore"
   workflow_dispatch:
+    inputs:
+      build_sha:
+        description: '要重新构建的提交 SHA；留空使用所选分支当前提交'
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      build_sha:
+        required: true
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -30,6 +40,16 @@ jobs:
         uses: actions/checkout@main
         with:
             submodules: recursive
+            ref: ${{ inputs.build_sha || github.sha }}
+
+      - name: Verify build revision
+        env:
+          EXPECTED_SHA: ${{ inputs.build_sha || github.sha }}
+        run: |
+          set -e
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA" || exit 1
+          echo "PACKAGE_BUILD_SHA=$EXPECTED_SHA"
 
       - name: Install Procursus
         uses: dhinakg/procursus-action@main
