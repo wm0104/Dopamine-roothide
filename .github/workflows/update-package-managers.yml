@@ -1,0 +1,13 @@
+name: 更新内置包管理器
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    uses: wm0104/Dopamine-roothide/.github/workflows/update-package-managers.yml@custom-package-managers
+    permissions:
+      contents: write
